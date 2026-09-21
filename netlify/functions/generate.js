@@ -308,7 +308,9 @@ exports.handler = async (event) => {
     await usageStore.set(totalKey, String(totalCount + 1));
 
     // --- 曲調プロンプトの生成(必要なら自動短縮) ---
+    console.log("STEP1 start", Date.now());
     const raw = await callClaude(buildPrompt(answers));
+    console.log("STEP2 done", Date.now());
     const s = parseLabeledSections(raw, ["STYLE_PROMPT", "LYRIC_PROMPT"]);
     if (!s.STYLE_PROMPT || !s.LYRIC_PROMPT) throw new Error("incomplete result");
 

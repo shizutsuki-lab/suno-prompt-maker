@@ -15,6 +15,7 @@
 
 const { getStore } = require("@netlify/blobs");
 const crypto = require("crypto");
+const { connectLambda } = require("@netlify/blobs");
 
 const PER_IP_DAILY_LIMIT = 3;
 const SITE_DAILY_LIMIT = 30;
@@ -258,6 +259,7 @@ exports.handler = async (event) => {
   const ip = getClientIp(event);
   const ipHash = hashIp(ip);
   const dateKey = todayKeyJST();
+  connectLambda(event);
 
   const usageStore = getStore("suno-usage");
 

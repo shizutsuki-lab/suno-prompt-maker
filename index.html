@@ -1,0 +1,522 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>SUNO PROMPT MAKER</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700&family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap" rel="stylesheet">
+<script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState } = React;
+
+// ---------------------------------------------------------------------
+// SUNO PROMPT MAKER (Netlify版)
+// AI生成部分はすべてサーバー側(/.netlify/functions/generate)で行う。
+// このファイルにAnthropicのAPIキーは一切含まれていない。
+// ---------------------------------------------------------------------
+
+const ACCENT_A = "#8B5CF6";
+const ACCENT_B = "#22D3EE";
+
+const GENRE_OPTIONS = [
+  "J-POP", "ロック", "ポップロック", "バラード", "シティポップ", "フォーク",
+  "アコースティック", "ジャズ", "R&B", "ソウル", "ファンク", "EDM", "テクノ",
+  "ヒップホップ", "昭和歌謡", "アイドルポップ", "アニソン風", "オルタナティブ",
+  "メタル", "クラシック", "オーケストラ", "その他",
+];
+
+const MOOD_OPTIONS = [
+  "明るい", "楽しい", "爽やか", "優しい", "温かい", "切ない", "悲しい", "泣ける",
+  "ノスタルジック", "ロマンチック", "幻想的", "神秘的", "不穏", "ダーク", "激しい",
+  "力強い", "壮大", "疾走感", "コミカル", "セクシー", "希望を感じる",
+];
+
+const TEMPO_OPTIONS = ["とてもゆっくり", "ゆっくり", "ミドルテンポ", "やや速い", "速い", "おまかせ"];
+
+const INSTRUMENT_OPTIONS = [
+  "ピアノ", "アコースティックギター", "エレキギター", "フラメンコギター", "ベース", "生ドラム", "電子ドラム",
+  "シンセサイザー", "ストリングス", "バイオリン", "チェロ",
+  "サックス(ソプラノ)", "サックス(アルト)", "サックス(テナー)", "サックス(バリトン)",
+  "トランペット", "フルート", "ハーモニカ", "オルガン", "和楽器", "オーケストラ", "おまかせ",
+];
+
+const VOCAL_OPTIONS = ["男性", "女性", "男女デュエット", "複数ボーカル", "インストゥルメンタル"];
+
+const VOICE_QUALITY_OPTIONS = [
+  "透明感のある声", "優しい声", "柔らかい声", "甘い声", "ハスキー", "低く落ち着いた声",
+  "高く澄んだ声", "力強い声", "少し掠れた声", "大人っぽい声", "少年・少女のような声", "おまかせ",
+];
+
+const SINGING_STYLE_OPTIONS = [
+  "語りかけるように", "優しく", "淡々と", "感情豊かに", "力強く", "激しく",
+  "囁くように", "伸びやかに", "サビで一気に爆発", "おまかせ",
+];
+
+const ERA_OPTIONS = ["1960〜70年代", "1980年代", "1990年代", "2000年代", "現代的", "未来的", "レトロと現代の融合", "おまかせ"];
+
+const DEVELOPMENT_OPTIONS = [
+  "静かに始まる", "最初から印象的", "徐々に盛り上がる", "サビで一気に盛り上がる",
+  "一度静かになってから爆発する", "ラストで最大に盛り上がる", "最後は静かに終わる",
+  "転調を入れる", "印象的なイントロ", "印象的なアウトロ", "おまかせ",
+];
+
+const THEME_OPTIONS = [
+  "恋愛", "片思い", "失恋", "再会", "別れ", "友情", "家族", "青春", "人生", "夢",
+  "挫折", "再出発", "希望", "孤独", "日常", "夏", "冬", "故郷", "旅", "その他",
+];
+
+const POV_OPTIONS = ["僕", "私", "俺", "あたし", "一人称をなるべく使わない", "おまかせ"];
+
+const ENDING_OPTIONS = ["明るく終わる", "希望を残す", "切なく終わる", "悲しく終わる", "余韻を残す", "どんでん返し", "おまかせ"];
+
+const EXPRESSION_OPTIONS = [
+  "シンプルでわかりやすい", "詩的", "文学的", "会話のように自然", "情景描写を多く",
+  "ストーリー性重視", "比喩を多く", "比喩を控える", "少しコミカル", "おまかせ",
+];
+
+const STEPS = [
+  { id: "genre", screen: 1, type: "multi", label: "ジャンル", options: GENRE_OPTIONS },
+  { id: "mood", screen: 1, type: "multi", label: "曲の雰囲気", options: MOOD_OPTIONS },
+  { id: "tempo", screen: 1, type: "single", label: "テンポ", options: TEMPO_OPTIONS },
+  { id: "instruments", screen: 1, type: "multi", label: "使用したい楽器", options: INSTRUMENT_OPTIONS },
+  {
+    id: "instrumentEmphasis",
+    screen: 1,
+    type: "multi",
+    label: "その中で特に重点を置きたい楽器は？(任意)",
+    maxSelect: 2,
+    options: (a) => (Array.isArray(a.instruments) && a.instruments.length > 0 ? a.instruments.filter((i) => i !== "おまかせ") : []),
+    visible: (a) => Array.isArray(a.instruments) && a.instruments.filter((i) => i !== "おまかせ").length > 0,
+  },
+  { id: "vocal", screen: 1, type: "single", label: "ボーカル", options: VOCAL_OPTIONS },
+  {
+    id: "voiceQuality",
+    screen: 1,
+    type: "multi",
+    label: "声質",
+    options: VOICE_QUALITY_OPTIONS,
+    visible: (a) => a.vocal && a.vocal !== "インストゥルメンタル",
+  },
+  { id: "singingStyle", screen: 1, type: "multi", label: "歌い方", options: SINGING_STYLE_OPTIONS },
+  { id: "era", screen: 1, type: "single", label: "時代・サウンド感", options: ERA_OPTIONS },
+  { id: "development", screen: 1, type: "multi", label: "曲の展開", options: DEVELOPMENT_OPTIONS },
+  {
+    id: "referenceArtist",
+    screen: 1,
+    type: "text",
+    label: "参考にしたいアーティスト・楽曲(任意)",
+    placeholder: "例: ○○の△△のような雰囲気",
+    note: "ここに入力した名前がそのまま曲調プロンプトに使われることはありません。音楽的な特徴だけを抽出して反映し、名前自体は出力に含めません(著作権上の配慮のためです)。",
+  },
+
+  { id: "theme", screen: 2, type: "multi", label: "歌詞のテーマ", options: THEME_OPTIONS },
+  { id: "protagonist", screen: 2, type: "text", label: "主人公", placeholder: "例: 高校生の女の子(空欄でもOK)" },
+  { id: "addressee", screen: 2, type: "text", label: "誰に向けた歌か", placeholder: "例: 昔の恋人(空欄でもOK)" },
+  { id: "pov", screen: 2, type: "single", label: "歌詞の一人称", options: POV_OPTIONS },
+  { id: "ending", screen: 2, type: "single", label: "結末", options: ENDING_OPTIONS },
+  { id: "expression", screen: 2, type: "multi", label: "歌詞の表現", options: EXPRESSION_OPTIONS },
+  {
+    id: "mustInclude",
+    screen: 2,
+    type: "text",
+    multiline: true,
+    label: "歌詞に必ず入れたい言葉・情景",
+    placeholder: "例: 夏の踏切、缶コーヒー、午前2時(カンマや改行で複数入力できます)",
+  },
+  {
+    id: "mustAvoid",
+    screen: 2,
+    type: "text",
+    multiline: true,
+    label: "歌詞に入れたくないもの",
+    placeholder: "例: 英語を使わない、『愛してる』は使わない(空欄でもOK)",
+  },
+  { id: "titleMode", screen: 2, type: "single", label: "タイトル", options: ["AIに考えてもらう", "自分で指定する"] },
+  {
+    id: "titleText",
+    screen: 2,
+    type: "text",
+    label: "タイトルを入力",
+    placeholder: "例: 夏の午前2時",
+    visible: (a) => a.titleMode === "自分で指定する",
+  },
+];
+
+const fmt = (v) => {
+  if (!v) return null;
+  if (Array.isArray(v)) return v.length > 0 ? v.join("、") : null;
+  const trimmed = String(v).trim();
+  return trimmed ? trimmed : null;
+};
+
+const STEP_INTRO = "intro";
+const STEP_QUESTIONS = "questions";
+const STEP_CONFIRM = "confirm";
+const STEP_LOADING = "loading";
+const STEP_RESULT = "result";
+const STEP_ERROR = "error";
+const STEP_LIMIT = "limit";
+
+function SunoPromptMaker() {
+  const [phase, setPhase] = useState(STEP_INTRO);
+  const [answers, setAnswers] = useState({});
+  const [stepIndex, setStepIndex] = useState(0);
+  const [result, setResult] = useState(null);
+  const [copiedStyle, setCopiedStyle] = useState(false);
+  const [copiedLyric, setCopiedLyric] = useState(false);
+  const [limitMessage, setLimitMessage] = useState("");
+  const [isGenerating, setIsGenerating] = useState(false);
+
+  const visibleSteps = STEPS.filter((s) => !s.visible || s.visible(answers));
+  const currentStep = phase === STEP_QUESTIONS ? visibleSteps[stepIndex] : null;
+
+  const setAnswer = (id, value) => {
+    setAnswers((prev) => ({ ...prev, [id]: value }));
+  };
+
+  const toggleMulti = (id, value, maxSelect) => {
+    setAnswers((prev) => {
+      const current = Array.isArray(prev[id]) ? prev[id] : [];
+      if (current.includes(value)) {
+        return { ...prev, [id]: current.filter((v) => v !== value) };
+      }
+      if (maxSelect && current.length >= maxSelect) {
+        return prev;
+      }
+      return { ...prev, [id]: [...current, value] };
+    });
+  };
+
+  const goNext = () => {
+    if (stepIndex < visibleSteps.length - 1) {
+      setStepIndex(stepIndex + 1);
+    } else {
+      setPhase(STEP_CONFIRM);
+    }
+  };
+
+  const goBack = () => {
+    if (stepIndex > 0) {
+      setStepIndex(stepIndex - 1);
+    } else {
+      setPhase(STEP_INTRO);
+    }
+  };
+
+  const editAnswers = () => {
+    setStepIndex(visibleSteps.length - 1);
+    setPhase(STEP_QUESTIONS);
+  };
+
+  // ボタン連打で複数回リクエストが飛ばないよう、生成中は必ずガードする。
+  // 最終的な回数制限はサーバー側(Netlify Functions)で必ず判定される。
+  const generate = async () => {
+    if (isGenerating) return;
+    setIsGenerating(true);
+    setPhase(STEP_LOADING);
+    try {
+      const response = await fetch("/.netlify/functions/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ answers }),
+      });
+      const data = await response.json();
+
+      if (data.error === "LIMIT_REACHED" || data.error === "TOO_FAST") {
+        setLimitMessage(data.message || "本日の利用上限に達しました。また明日お試しください。");
+        setPhase(STEP_LIMIT);
+        return;
+      }
+      if (data.error || !data.style || !data.lyric) {
+        throw new Error("generation failed");
+      }
+      setResult({ style: data.style, lyric: data.lyric });
+      setPhase(STEP_RESULT);
+    } catch (e) {
+      setPhase(STEP_ERROR);
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  const restart = () => {
+    setAnswers({});
+    setStepIndex(0);
+    setResult(null);
+    setCopiedStyle(false);
+    setCopiedLyric(false);
+    setLimitMessage("");
+    setPhase(STEP_INTRO);
+  };
+
+  const copyText = async (text, markFn) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      markFn(true);
+      setTimeout(() => markFn(false), 2000);
+    } catch (e) {
+      try {
+        const ta = document.createElement("textarea");
+        ta.value = text;
+        ta.style.position = "fixed";
+        ta.style.left = "-9999px";
+        document.body.appendChild(ta);
+        ta.focus();
+        ta.select();
+        document.execCommand("copy");
+        document.body.removeChild(ta);
+        markFn(true);
+        setTimeout(() => markFn(false), 2000);
+      } catch (e2) {}
+    }
+  };
+
+  const pageStyle = {
+    minHeight: "100vh",
+    width: "100%",
+    background: "radial-gradient(ellipse at 50% -10%, rgba(139,92,246,0.14), transparent 55%), #0E0E12",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: "36px 18px",
+    boxSizing: "border-box",
+    fontFamily: "'Zen Kaku Gothic New', 'Noto Sans JP', sans-serif",
+    color: "#F0F0F5",
+  };
+
+  const gradientText = {
+    background: `linear-gradient(90deg, ${ACCENT_A}, ${ACCENT_B})`,
+    WebkitBackgroundClip: "text",
+    WebkitTextFillColor: "transparent",
+    backgroundClip: "text",
+  };
+
+  const primaryButtonStyle = {
+    fontFamily: "'Outfit', sans-serif",
+    fontWeight: 700,
+    fontSize: 15,
+    color: "#0E0E12",
+    background: `linear-gradient(120deg, ${ACCENT_A}, ${ACCENT_B})`,
+    border: "none",
+    borderRadius: 999,
+    padding: "14px 32px",
+    cursor: "pointer",
+  };
+
+  const outlineButtonStyle = {
+    fontSize: 13.5,
+    color: "#8B8B99",
+    background: "transparent",
+    border: "1px solid rgba(255,255,255,0.15)",
+    borderRadius: 999,
+    padding: "12px 26px",
+    cursor: "pointer",
+  };
+
+  return (
+    <div style={pageStyle}>
+      <style>{`
+        @keyframes fadeUp { from { opacity:0; transform:translateY(8px);} to { opacity:1; transform:translateY(0);} }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .fade-up { animation: fadeUp 0.35s ease both; }
+        textarea:focus, input:focus { outline: none; border-color: ${ACCENT_A} !important; }
+      `}</style>
+
+      <div style={{ width: "100%", maxWidth: 520 }}>
+        <div style={{ textAlign: "center", marginBottom: 30 }}>
+          <div style={{ fontFamily: "'Outfit', sans-serif", fontWeight: 700, fontSize: 20, letterSpacing: "0.04em", ...gradientText }}>
+            SUNO PROMPT MAKER
+          </div>
+          {phase !== STEP_INTRO && phase !== STEP_RESULT && (
+            <div style={{ fontSize: 11.5, color: "#5C5C6E", marginTop: 6, letterSpacing: "0.1em" }}>
+              質問に答えるだけで、オリジナル曲の設計図を作ろう。
+            </div>
+          )}
+        </div>
+
+        {phase === STEP_INTRO && (
+          <div className="fade-up" style={{ textAlign: "center" }}>
+            <p style={{ color: "#B4B4C4", fontSize: 13.5, lineHeight: 2, margin: "0 0 34px" }}>
+              質問に答えるだけで、オリジナル曲の設計図を作ろう。
+              <br />
+              音楽やプロンプトの知識は不要です。
+            </p>
+            <button onClick={() => { setPhase(STEP_QUESTIONS); setStepIndex(0); }} style={primaryButtonStyle}>
+              はじめる
+            </button>
+          </div>
+        )}
+
+        {phase === STEP_QUESTIONS && currentStep && (
+          <div key={currentStep.id} className="fade-up">
+            <div style={{ fontSize: 11, color: "#5C5C6E", marginBottom: 6 }}>
+              STEP {currentStep.screen === 1 ? "1: 曲調を決める" : "2: 歌詞の内容を決める"}
+            </div>
+            <div style={{ height: 4, background: "rgba(255,255,255,0.08)", borderRadius: 999, overflow: "hidden", marginBottom: 10 }}>
+              <div style={{ height: "100%", width: `${((stepIndex + 1) / visibleSteps.length) * 100}%`, background: `linear-gradient(90deg, ${ACCENT_A}, ${ACCENT_B})`, transition: "width 0.3s ease" }} />
+            </div>
+            <div style={{ fontSize: 11.5, color: "#5C5C6E", textAlign: "right", marginBottom: 20 }}>
+              {stepIndex + 1} / {visibleSteps.length}
+            </div>
+
+            <h2 style={{ fontFamily: "'Outfit', sans-serif", fontWeight: 600, fontSize: "clamp(19px, 5vw, 23px)", margin: "0 0 8px" }}>
+              {currentStep.label}
+            </h2>
+            {currentStep.type === "multi" && (
+              <p style={{ fontSize: 11.5, color: "#5C5C6E", margin: "0 0 18px" }}>
+                {currentStep.maxSelect ? `最大${currentStep.maxSelect}つまで選べます` : "複数選択できます"}
+              </p>
+            )}
+
+            {(currentStep.type === "single" || currentStep.type === "multi") && (
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 30 }}>
+                {(typeof currentStep.options === "function" ? currentStep.options(answers) : currentStep.options).map((opt) => {
+                  const isMulti = currentStep.type === "multi";
+                  const current = answers[currentStep.id];
+                  const isSelected = isMulti ? Array.isArray(current) && current.includes(opt) : current === opt;
+                  return (
+                    <button
+                      key={opt}
+                      onClick={() => (isMulti ? toggleMulti(currentStep.id, opt, currentStep.maxSelect) : setAnswer(currentStep.id, opt))}
+                      style={{
+                        fontSize: 13,
+                        padding: "10px 16px",
+                        borderRadius: 999,
+                        border: isSelected ? `1px solid ${ACCENT_A}` : "1px solid rgba(255,255,255,0.15)",
+                        background: isSelected ? `linear-gradient(120deg, ${ACCENT_A}33, ${ACCENT_B}33)` : "rgba(255,255,255,0.03)",
+                        color: isSelected ? "#F0F0F5" : "#B4B4C4",
+                        cursor: "pointer",
+                      }}
+                    >
+                      {opt}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
+            {currentStep.type === "text" && (
+              <div style={{ marginBottom: 30 }}>
+                {currentStep.note && <p style={{ fontSize: 11.5, color: "#5C5C6E", lineHeight: 1.8, margin: "0 0 12px" }}>{currentStep.note}</p>}
+                {currentStep.multiline ? (
+                  <textarea
+                    value={answers[currentStep.id] || ""}
+                    onChange={(e) => setAnswer(currentStep.id, e.target.value)}
+                    placeholder={currentStep.placeholder}
+                    rows={3}
+                    style={{ width: "100%", boxSizing: "border-box", background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.15)", borderRadius: 12, padding: "13px 15px", fontSize: 14, lineHeight: 1.7, color: "#F0F0F5", fontFamily: "inherit", resize: "vertical" }}
+                  />
+                ) : (
+                  <input
+                    type="text"
+                    value={answers[currentStep.id] || ""}
+                    onChange={(e) => setAnswer(currentStep.id, e.target.value)}
+                    placeholder={currentStep.placeholder}
+                    style={{ width: "100%", boxSizing: "border-box", background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.15)", borderRadius: 12, padding: "13px 15px", fontSize: 14, color: "#F0F0F5" }}
+                  />
+                )}
+              </div>
+            )}
+
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
+              <button onClick={goBack} style={outlineButtonStyle}>← 戻る</button>
+              <button onClick={goNext} style={primaryButtonStyle}>
+                {stepIndex === visibleSteps.length - 1 ? "選んだ内容を確認する →" : "次へ →"}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {phase === STEP_CONFIRM && (
+          <div className="fade-up">
+            <h2 style={{ fontFamily: "'Outfit', sans-serif", fontWeight: 600, fontSize: "clamp(19px, 5vw, 23px)", textAlign: "center", margin: "0 0 6px" }}>
+              選んだ内容を確認
+            </h2>
+            <p style={{ fontSize: 12, color: "#8B8B99", textAlign: "center", margin: "0 0 22px" }}>内容を確認してから生成できます</p>
+            <div style={{ background: "#1A1A22", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 16, padding: "6px 18px", marginBottom: 26, maxHeight: "56vh", overflowY: "auto" }}>
+              {visibleSteps.map((step, i) => {
+                const raw = answers[step.id];
+                const display = step.id === "titleMode"
+                  ? (raw === "自分で指定する" ? `自分で指定する(${fmt(answers.titleText) || "未入力"})` : raw || "(未回答)")
+                  : (fmt(raw) || "(未回答)");
+                return (
+                  <div key={step.id} style={{ display: "flex", justifyContent: "space-between", gap: 14, padding: "12px 0", borderBottom: i === visibleSteps.length - 1 ? "none" : "1px solid rgba(255,255,255,0.08)" }}>
+                    <span style={{ fontSize: 12.5, color: "#8B8B99", flexShrink: 0, minWidth: 96 }}>{step.label.replace(/[？?]$/, "")}</span>
+                    <span style={{ fontSize: 13, color: "#F0F0F5", textAlign: "right" }}>{display}</span>
+                  </div>
+                );
+              })}
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 10, alignItems: "center" }}>
+              <button onClick={generate} disabled={isGenerating} style={{ ...primaryButtonStyle, opacity: isGenerating ? 0.6 : 1 }}>
+                この内容で生成する
+              </button>
+              <button onClick={editAnswers} style={outlineButtonStyle}>回答を修正する</button>
+            </div>
+          </div>
+        )}
+
+        {phase === STEP_LOADING && (
+          <div className="fade-up" style={{ textAlign: "center", padding: "70px 0" }}>
+            <div style={{ width: 60, height: 60, margin: "0 auto 24px", borderRadius: "50%", border: "3px solid rgba(255,255,255,0.1)", borderTopColor: ACCENT_A, animation: "spin 0.9s linear infinite" }} />
+            <p style={{ fontSize: 13, color: "#8B8B99" }}>設計図を組み立てています…</p>
+          </div>
+        )}
+
+        {phase === STEP_LIMIT && (
+          <div className="fade-up" style={{ textAlign: "center", padding: "40px 0" }}>
+            <p style={{ color: "#FFC93C", marginBottom: 24, fontSize: 14.5, lineHeight: 1.9 }}>{limitMessage}</p>
+            <button onClick={restart} style={outlineButtonStyle}>トップに戻る</button>
+          </div>
+        )}
+
+        {phase === STEP_ERROR && (
+          <div className="fade-up" style={{ textAlign: "center", padding: "40px 0" }}>
+            <p style={{ color: "#FF6B6B", marginBottom: 24 }}>生成に失敗しました。もう一度お試しください。</p>
+            <button onClick={generate} style={{ ...outlineButtonStyle, marginRight: 10 }}>もう一度生成する</button>
+            <button onClick={restart} style={outlineButtonStyle}>最初からやり直す</button>
+          </div>
+        )}
+
+        {phase === STEP_RESULT && result && (
+          <div className="fade-up">
+            <div style={{ background: "#1A1A22", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 16, padding: "20px 18px", marginBottom: 20 }}>
+              <div style={{ fontSize: 11, color: ACCENT_B, letterSpacing: "0.15em", marginBottom: 12, fontFamily: "'Outfit', sans-serif" }}>① SUNO用 曲調プロンプト</div>
+              <p style={{ fontSize: 13.5, lineHeight: 1.8, margin: "0 0 16px", whiteSpace: "pre-wrap", color: "#D8D8E2" }}>{result.style}</p>
+              <button onClick={() => copyText(result.style, setCopiedStyle)} style={{ width: "100%", boxSizing: "border-box", fontFamily: "'Outfit', sans-serif", fontWeight: 700, fontSize: 14, color: "#0E0E12", background: copiedStyle ? "#4ADE80" : `linear-gradient(120deg, ${ACCENT_A}, ${ACCENT_B})`, border: "none", borderRadius: 999, padding: "13px", cursor: "pointer" }}>
+                {copiedStyle ? "コピーしました！" : "曲調プロンプトをコピー"}
+              </button>
+            </div>
+
+            <div style={{ background: "#1A1A22", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 16, padding: "20px 18px", marginBottom: 26 }}>
+              <div style={{ fontSize: 11, color: ACCENT_A, letterSpacing: "0.15em", marginBottom: 12, fontFamily: "'Outfit', sans-serif" }}>② ChatGPT用 作詞プロンプト</div>
+              <p style={{ fontSize: 13.5, lineHeight: 1.9, margin: "0 0 16px", whiteSpace: "pre-wrap", color: "#D8D8E2" }}>{result.lyric}</p>
+              <button onClick={() => copyText(result.lyric, setCopiedLyric)} style={{ width: "100%", boxSizing: "border-box", fontFamily: "'Outfit', sans-serif", fontWeight: 700, fontSize: 14, color: "#0E0E12", background: copiedLyric ? "#4ADE80" : `linear-gradient(120deg, ${ACCENT_A}, ${ACCENT_B})`, border: "none", borderRadius: 999, padding: "13px", cursor: "pointer" }}>
+                {copiedLyric ? "コピーしました！" : "作詞プロンプトをコピー"}
+              </button>
+            </div>
+
+            <div style={{ textAlign: "center" }}>
+              <button onClick={restart} style={outlineButtonStyle}>最初からやり直す</button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<SunoPromptMaker />);
+</script>
+</body>
+</html>
